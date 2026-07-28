@@ -32,8 +32,12 @@ docker compose exec nestjs-api npm run start:dev
 ```
 
 Services:
-- `nestjs-api` — NestJS API, port `3000`
+- `nestjs-api` — NestJS API, port `3000` (stays idle by default — see "Environment Startup Verification" above)
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP test server, web UI on port `8025`
+- `storage` — MinIO (S3-compatible), API on port `9000`, console on port `9001`, user/password `minioadmin`
+- `redis` — Redis 7, port `6379`, backs the BullMQ video-processing queue
+- `worker` — Video processing worker (`Dockerfile.worker`). Unlike `nestjs-api`, this container **runs its process automatically** on `docker compose up -d` — its only job is background processing, so leaving it idle would defeat the point of the queue
 
 All verification and teardown commands run on the **host machine**:
 
@@ -148,6 +152,47 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+
+## Video Module (Phase 03)
+
+`VideosModule` (`src/videos/`) implements upload, processing, and streaming of videos. It never accepts the video binary in an API request body — the 10GB size limit is handled entirely by uploading straight to object storage.
+
+### Status lifecycle
+
+`Video.status`: `draft → processing → ready | error`. Set by:
+- `draft` — on `POST /videos` (only `title` is required at this point).
+- `processing` — on `POST /videos/:id/complete-upload`, right after the queue job is enqueued.
+- `ready` — set by the worker (`VideoProcessor.process`) once metadata/thumbnail extraction succeeds.
+- `error` — set by `VideoProcessor.onFailed` (an `@OnWorkerEvent('failed')` handler) **only once BullMQ has exhausted all configured retry attempts** (`job.attemptsMade >= job.opts.attempts`), not on every individual failed attempt. Retries themselves are handled entirely by BullMQ's own `attempts`/`backoff` job options — there is no separate retry loop in application code.
+
+### Endpoints (`VideosController`)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /videos` | Creates a `draft` row + starts a presigned multipart upload; returns per-part presigned PUT URLs |
+| `POST /videos/:id/complete-upload` | Completes the multipart upload, moves status to `processing`, enqueues the `video.process` job |
+| `GET /videos/:id` | Returns status/details (owner-only) |
+| `GET /videos/:id/stream` | Streams or downloads the file; the **same endpoint** serves both — presence of a `Range` header decides `206 Partial Content` (streaming) vs `200` with `Content-Disposition: attachment` (download). Requires `status: ready` |
+
+All endpoints are owner-scoped: a user can only act on videos belonging to their own channel (resolved via `ChannelsService.findByUserId`, since the JWT payload only carries `sub`/`email`).
+
+### Upload strategy
+
+`StorageService` (S3-compatible client, `forcePathStyle: true` for MinIO) wraps presigned multipart upload: `createMultipartUpload` → one presigned `UploadPartCommand` URL per part → client uploads parts directly to storage → `completeMultipartUpload`. Objects live under `videos/{videoId}/original.<ext>` and `videos/{videoId}/thumbnail.jpg` in the `streamtube-videos` bucket (bucket name from `STORAGE_BUCKET`, default `streamtube-videos`).
+
+`StorageService` implements `OnModuleInit` and ensures the bucket exists on boot (`HeadBucketCommand`, falling back to `CreateBucketCommand`) — this is required for a truly fresh environment (empty MinIO volume) to work without a manual `mc mb` step.
+
+### Queue and worker
+
+- Queue: BullMQ (`@nestjs/bullmq`), queue name `video-processing` (`VIDEO_PROCESSING_QUEUE` in `src/videos/videos.constants.ts`), job name `video.process`. Enqueued with `{ attempts: 3, backoff: { type: 'exponential', delay: 1000 } }` in `VideosService.completeUpload`.
+- Worker: `src/worker/` is a **separate NestJS application context** (`worker.main.ts` → `NestFactory.createApplicationContext(WorkerModule)`, not the HTTP app), run via `npm run worker:dev` (`worker:start:prod` for the compiled build) in the `worker` Docker service. `VideoProcessor` (`@Processor(VIDEO_PROCESSING_QUEUE)`, extends `WorkerHost`) downloads the original file, runs `ffprobe` for metadata and `ffmpeg` (`.screenshots()`) for a thumbnail, uploads the thumbnail, and updates the `Video` row.
+- `ffmpeg`/`ffprobe` (system binaries, via `fluent-ffmpeg`) are installed in **both** `Dockerfile.dev` (so `nestjs-api` — where `npm test` runs — can execute the worker's integration tests) and `Dockerfile.worker`.
+- The `onFailed` handler's own DB update is wrapped in `try/catch`: BullMQ does not catch exceptions thrown from event listeners, so an unhandled rejection there would crash the entire worker process, not just the one job.
+
+### Testing notes specific to this module
+
+- `@nestjs/bullmq` registers the real BullMQ `Worker` in an `onModuleInit` hook (`BullRegistrar`) that only fires on the full Nest application lifecycle. A bare `Test.createTestingModule({...}).compile()` does **not** trigger it — a `Queue` producer still works (jobs can be enqueued), but no `Worker` will ever consume them. Any test that needs the real worker to process a real queued job must call `module.createNestApplication()` + `await app.init()` (see `video.processor.integration-spec.ts`), not just `.compile()`.
+- `video.processor.integration-spec.ts` generates a tiny synthetic video on the fly via `execFileSync('ffmpeg', ['-f', 'lavfi', ...])` instead of committing a binary fixture to the repo.
 
 ## Code Conventions
 

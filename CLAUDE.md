@@ -20,11 +20,13 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
 - **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
+- **Video Worker** (NestJS application context + `fluent-ffmpeg`) → consumes jobs from the queue, extracts metadata/generates a thumbnail, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (S3/MinIO) → video files and thumbnails, via presigned multipart upload
+- **Message Queue** (BullMQ + Redis) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+See [nestjs-project/CLAUDE.md](nestjs-project/CLAUDE.md) → "Video Module (Phase 03)" for endpoint contracts, the upload/processing pipeline, and the queue/worker/storage wiring.
 
 ## Docker Networking
 
