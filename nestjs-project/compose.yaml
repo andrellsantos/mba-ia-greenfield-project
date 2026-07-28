@@ -17,6 +17,26 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f worker.main"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   storage:
     image: minio/minio
     ports:

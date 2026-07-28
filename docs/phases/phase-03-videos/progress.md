@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/10 completed
+**SIs:** 8/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -62,9 +62,12 @@
   - Vídeo "pronto" para os testes é semeado diretamente (grava objeto via `StorageService.putObject` + atualiza `status` no banco), sem depender do worker (ainda não implementado — SI-03.8/03.9).
 
 ### SI-03.8 — Worker Bootstrap (contexto separado + Dockerfile + Compose)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (infra) — verificado manualmente: `docker compose up -d --build worker` sobe saudável, `ffmpeg -version` funciona no container, log confirma "Video worker started, listening for jobs..."
+- **Observations:**
+  - **Decisão consciente divergente do padrão da API:** ao contrário do `nestjs-api` (que fica ocioso via `tail -f /dev/null` até o dev subir manualmente, por convenção do projeto), o `Dockerfile.worker` roda o processo de fato (`npm run worker:dev`) — o worker não é um servidor de desenvolvimento iterativo, é um processo de background cujo propósito inteiro é "processamento automático"; deixá-lo ocioso quebraria a fase (`docker compose up` não teria processamento algum funcionando de verdade).
+  - **Bug pego ao subir o worker pela primeira vez:** `TypeORMError: Entity metadata for Channel#user was not found`. Causa: `Channel` tem uma relação `@OneToOne(() => User, ...)`, mas `WorkerModule` só importava `VideosModule` (que traz `ChannelsModule` transitivamente) — `User` nunca era registrado via `TypeOrmModule.forFeature` na árvore de módulos do worker, então o TypeORM não conseguia resolver a metadata da relação. Corrigido importando `UsersModule` diretamente em `WorkerModule`.
+  - `worker:dev` usa `ts-node` (mesmo padrão do script `seed` já existente), evitando configurar múltiplos entry points no `nest-cli.json`. `worker:start:prod` (`node dist/worker/worker.main`) adicionado para produção, já que `nest build` compila toda a árvore de `src/`.
 
 ### SI-03.9 — Video Processor (metadados + thumbnail)
 - **Status:** pending
