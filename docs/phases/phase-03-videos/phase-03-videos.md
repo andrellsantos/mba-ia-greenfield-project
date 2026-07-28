@@ -100,7 +100,7 @@ Entregar upload de vídeos de até 10GB via presigned multipart upload direto ao
 ### SI-03.4 — Endpoint POST /videos (pré-cadastro do rascunho + início do upload)
 
 **Route:** POST /videos
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos.plan.md`
 **Authorization:** Owner (channel do usuário autenticado)
 
 **Description:** Cria o vídeo como rascunho (`status = draft`) vinculado ao canal do usuário autenticado e inicia o multipart upload no storage, retornando as URLs assinadas por parte para o cliente enviar o arquivo diretamente.
@@ -133,7 +133,7 @@ Entregar upload de vídeos de até 10GB via presigned multipart upload direto ao
 ### SI-03.5 — Endpoint POST /videos/:id/complete-upload (finaliza upload + enfileira processamento)
 
 **Route:** POST /videos/:id/complete-upload
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos.plan.md`
 **Authorization:** Owner (channel do usuário autenticado)
 
 **Description:** Finaliza o multipart upload no storage a partir das partes enviadas pelo cliente, transiciona o vídeo para `processing` e enfileira o job de processamento (extração de metadados + thumbnail).
@@ -165,7 +165,7 @@ Entregar upload de vídeos de até 10GB via presigned multipart upload direto ao
 ### SI-03.6 — Endpoint GET /videos/:id (status e detalhes)
 
 **Route:** GET /videos/:id
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos.plan.md`
 **Authorization:** Owner (channel do usuário autenticado)
 
 **Description:** Expõe o estado atual do vídeo (status, duração, erro) para o dono do canal acompanhar o ciclo de processamento.
@@ -193,7 +193,7 @@ Entregar upload de vídeos de até 10GB via presigned multipart upload direto ao
 ### SI-03.7 — Endpoint GET /videos/:id/stream (streaming e download via Range)
 
 **Route:** GET /videos/:id/stream
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos.plan.md`
 **Authorization:** Owner (channel do usuário autenticado)
 
 **Description:** Serve o arquivo do vídeo diretamente do storage — com `Range`, responde `206 Partial Content` para streaming; sem `Range`, responde o corpo completo com `Content-Disposition: attachment` para download (per `phase-03-videos/TD-04` revision).
