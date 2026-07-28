@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { VideosModule } from './videos/videos.module';
 import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
@@ -54,6 +55,7 @@ import { VIDEO_PROCESSING_QUEUE } from './videos/videos.constants';
     }),
     BullModule.registerQueue({ name: VIDEO_PROCESSING_QUEUE }),
     AuthModule,
+    VideosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

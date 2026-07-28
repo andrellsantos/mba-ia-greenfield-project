@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/10 completed
+**SIs:** 2/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -13,9 +13,12 @@
   - DI wiring do BullModule verificado rodando a suíte e2e existente (52/52 passando) — sem teste dedicado nesta SI (infra).
 
 ### SI-03.2 — Entidade Video e Migration
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9/9 passing (video.entity.integration-spec: 6, videos.module.spec: 1, migrations.integration-spec: 2)
+- **Observations:**
+  - Estendido `migrations.integration-spec.ts` (Fase 02) para registrar `CreateVideos` e incluir `videos` em `MANAGED_TABLES` — sem isso, o teste dropava `channels` via CASCADE (FK de `videos`) e nunca recriava a tabela `videos`, quebrando todas as próximas SIs.
+  - Corrigido deadlock: dropar `videos` (tem FK para `channels`) concorrentemente com `channels` via `Promise.all` causava deadlock entre duas conexões disputando o mesmo lock — `videos` agora é dropada sequencialmente antes do `Promise.all` do restante.
+  - O segundo teste de `migrations.integration-spec.ts` foi re-semanticamente ajustado: `undoLastMigration()` agora reverte `CreateVideos` (última migration), não mais `CreateAuthTokens` — teste renomeado e reescrito para refletir isso.
 
 ### SI-03.3 — Storage Service (cliente S3/MinIO, multipart presigned, leitura por Range)
 - **Status:** pending
