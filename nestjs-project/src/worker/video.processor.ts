@@ -1,4 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from 'bullmq';
 import ffmpeg, { FfprobeData } from 'fluent-ffmpeg';
@@ -20,6 +21,8 @@ const THUMBNAIL_FILENAME = 'thumbnail.jpg';
 
 @Processor(VIDEO_PROCESSING_QUEUE)
 export class VideoProcessor extends WorkerHost {
+  private readonly logger = new Logger(VideoProcessor.name);
+
   constructor(
     @InjectRepository(Video)
     private readonly videoRepository: Repository<Video>,
@@ -68,6 +71,32 @@ export class VideoProcessor extends WorkerHost {
       } as QueryDeepPartialEntity<Video>);
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  @OnWorkerEvent('failed')
+  async onFailed(
+    job: Job<VideoProcessJobData> | undefined,
+    error: Error,
+  ): Promise<void> {
+    if (!job) return;
+
+    const maxAttempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < maxAttempts) return;
+
+    try {
+      await this.videoRepository.update({ id: job.data.videoId }, {
+        status: VideoStatus.ERROR,
+        error_message: error.message,
+      } as QueryDeepPartialEntity<Video>);
+    } catch (updateError) {
+      // BullMQ does not catch errors thrown from event listeners — an
+      // unhandled rejection here would crash the whole worker process,
+      // taking down every in-flight job, not just this one.
+      this.logger.error(
+        `Failed to mark video ${job.data.videoId} as error`,
+        updateError instanceof Error ? updateError.stack : updateError,
+      );
     }
   }
 

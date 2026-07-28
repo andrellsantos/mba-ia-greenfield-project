@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/10 completed
+**SIs:** 10/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -80,6 +80,11 @@
   - `ffmpeg.ffprobe`'s callback error é tipado como `any` pela lib — `@typescript-eslint/prefer-promise-reject-errors` exige rejeitar com um `Error` de verdade; normalizado com `err instanceof Error ? err : new Error('ffprobe failed')`.
 
 ### SI-03.10 — Tratamento de Falha no Processamento
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1/1 novo passando (video.processor.integration-spec.ts, retry real via BullMQ contra Redis real) + suíte completa revalidada (175 unit/integration + 64 e2e)
+- **Observations:**
+  - **Bug real descoberto e corrigido, fora do escopo original desta SI:** o teste de retry-esgotado inicialmente não funcionava — o job ficava parado em `waiting` para sempre, mesmo com o worker "escutando". Investigação (via scripts ad-hoc dentro dos containers, descartados depois) revelou que `Test.createTestingModule().compile()` **não** dispara os hooks `onModuleInit`/`onApplicationBootstrap` — e é exatamente nesse hook que o `@nestjs/bullmq` registra o `Worker` real (`BullRegistrar.onModuleInit`). Sem `app.init()`, o `Queue` funciona normalmente (produtor), mas nenhum `Worker` de fato consome jobs. Corrigido chamando `module.createNestApplication()` + `app.init()` no teste, e `app.close()` no teardown — validando o ciclo real de retry/backoff do BullMQ, não uma simulação.
+  - **Decisão de design:** `onFailed` só marca `status = error` quando `job.attemptsMade >= job.opts.attempts` (retries realmente esgotados) — falhas intermediárias são deixadas para o próprio mecanismo de retry/backoff da fila, sem duplicar essa lógica na aplicação (per `phase-03-videos/TD-01`, TD-05).
+  - **Robustez adicionada:** o `.update()` dentro de `onFailed` está em `try/catch` com log via `Logger` — o BullMQ não captura exceções lançadas por listeners de evento (`worker.on('failed', ...)`), então uma falha nessa atualização (ex. instabilidade transitória do banco) derrubaria o processo inteiro do worker (via unhandled rejection), interrompendo o processamento de todos os vídeos, não só do job atual.
+  - Teste usa `attempts: 2` com `backoff: { type: 'fixed', delay: 100 }` (mais rápido que a configuração de produção de `videos.service.ts`) apenas para manter o teste veloz — a config de produção (`attempts: 3`, backoff exponencial de 1s) não é alterada.
+  - Durante a investigação, uma restauração acidental do Redis (comando de diagnóstico mal formado) e o restart do container `worker` foram necessários para recuperar o ambiente — sem perda de dados persistentes (fila e cache são efêmeros).
