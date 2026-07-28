@@ -20,6 +20,7 @@ import { VIDEO_PROCESSING_QUEUE, VIDEO_PROCESS_JOB } from './videos.constants';
 import {
   VideoNotFoundException,
   VideoNotInDraftException,
+  VideoNotReadyException,
 } from './exceptions/video.exception';
 import { Video, VideoStatus } from './entities/video.entity';
 import { StorageService } from './storage.service';
@@ -33,6 +34,7 @@ describe('VideosService (integration)', () => {
   let channelsService: ChannelsService;
   let userRepository: Repository<User>;
   let videoRepository: Repository<Video>;
+  let storageService: StorageService;
   let queue: Queue;
 
   beforeAll(async () => {
@@ -62,6 +64,7 @@ describe('VideosService (integration)', () => {
     channelsService = module.get(ChannelsService);
     userRepository = dataSource.getRepository(User);
     videoRepository = dataSource.getRepository(Video);
+    storageService = module.get(StorageService);
     queue = module.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
@@ -223,6 +226,85 @@ describe('VideosService (integration)', () => {
 
       await expect(
         videosService.findOwnedById(otherUserId, draft.id),
+      ).rejects.toThrow(VideoNotFoundException);
+    }, 15000);
+  });
+
+  describe('getStreamableFile', () => {
+    async function createReadyVideo(
+      userId: string,
+      content: Buffer,
+    ): Promise<string> {
+      const draft = await videosService.createDraft(
+        userId,
+        'Ready Video',
+        'text/plain',
+        content.length,
+      );
+      await storageService.putObject(
+        `videos/${draft.id}/original.plain`,
+        content,
+        'text/plain',
+      );
+      await videoRepository.update(
+        { id: draft.id },
+        { status: VideoStatus.READY },
+      );
+      return draft.id;
+    }
+
+    it('returns the full file when no range is given', async () => {
+      const { userId } = await createUserWithChannel();
+      const content = Buffer.from('hello streamtube');
+      const id = await createReadyVideo(userId, content);
+
+      const result = await videosService.getStreamableFile(userId, id);
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of result.body) {
+        chunks.push(chunk as Buffer);
+      }
+      expect(Buffer.concat(chunks).toString()).toBe('hello streamtube');
+      expect(result.totalSize).toBe(content.length);
+      expect(result.range).toBeUndefined();
+      expect(result.filename).toBe('Ready Video.plain');
+    }, 15000);
+
+    it('returns a partial range when a Range header is given', async () => {
+      const { userId } = await createUserWithChannel();
+      const content = Buffer.from('0123456789');
+      const id = await createReadyVideo(userId, content);
+
+      const result = await videosService.getStreamableFile(
+        userId,
+        id,
+        'bytes=0-3',
+      );
+
+      expect(result.range).toEqual({ start: 0, end: 3 });
+    }, 15000);
+
+    it('throws VideoNotReadyException when the video is not ready', async () => {
+      const { userId } = await createUserWithChannel();
+      const draft = await videosService.createDraft(
+        userId,
+        'Processing Video',
+        'video/mp4',
+        1024,
+      );
+
+      await expect(
+        videosService.getStreamableFile(userId, draft.id),
+      ).rejects.toThrow(VideoNotReadyException);
+    }, 15000);
+
+    it('throws VideoNotFoundException for a video owned by another channel', async () => {
+      const { userId: ownerId } = await createUserWithChannel();
+      const { userId: otherUserId } = await createUserWithChannel();
+      const id = await createReadyVideo(ownerId, Buffer.from('x'));
+
+      await expect(
+        videosService.getStreamableFile(otherUserId, id),
       ).rejects.toThrow(VideoNotFoundException);
     }, 15000);
   });

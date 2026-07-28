@@ -10,6 +10,8 @@ import { DomainExceptionFilter } from '../src/common/filters/domain-exception.fi
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { MailService } from '../src/mail/mail.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
+import { Video, VideoStatus } from '../src/videos/entities/video.entity';
+import { StorageService } from '../src/videos/storage.service';
 
 interface VideoResponseBody {
   id?: string;
@@ -275,6 +277,108 @@ describe('Videos (e2e)', () => {
 
       const res = await request(app.getHttpServer())
         .get(`/videos/${draft.id}`)
+        .set('Authorization', `Bearer ${other.access_token}`)
+        .expect(404);
+
+      expect((res.body as VideoResponseBody).error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
+
+  describe('GET /videos/:id/stream', () => {
+    async function createReadyVideo(
+      accessToken: string,
+      content: Buffer,
+    ): Promise<string> {
+      const res = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Stream Video',
+          content_type: 'text/plain',
+          size_bytes: content.length,
+        });
+      const draft = res.body as VideoResponseBody;
+
+      const storageService = app.get(StorageService);
+      await storageService.putObject(
+        `videos/${draft.id}/original.plain`,
+        content,
+        'text/plain',
+      );
+      const videoRepository = dataSource.getRepository(Video);
+      await videoRepository.update(
+        { id: draft.id },
+        { status: VideoStatus.READY },
+      );
+      return draft.id!;
+    }
+
+    it('download-sem-range-header', async () => {
+      const { access_token } = await registerConfirmAndLogin(
+        'video-stream-download@example.com',
+      );
+      const content = Buffer.from('hello streamtube video bytes');
+      const id = await createReadyVideo(access_token, content);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/stream`)
+        .set('Authorization', `Bearer ${access_token}`)
+        .expect(200);
+
+      expect(res.headers['content-disposition']).toContain('attachment');
+      expect(res.text).toBe(content.toString());
+    });
+
+    it('streaming-com-range-header', async () => {
+      const { access_token } = await registerConfirmAndLogin(
+        'video-stream-range@example.com',
+      );
+      const content = Buffer.from('0123456789');
+      const id = await createReadyVideo(access_token, content);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/stream`)
+        .set('Authorization', `Bearer ${access_token}`)
+        .set('Range', 'bytes=0-3')
+        .expect(206);
+
+      expect(res.headers['content-range']).toBeDefined();
+      expect(res.text).toBe('0123');
+    });
+
+    it('retorna-409-quando-video-nao-esta-pronto', async () => {
+      const { access_token } = await registerConfirmAndLogin(
+        'video-stream-notready@example.com',
+      );
+      const draftRes = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${access_token}`)
+        .send({
+          title: 'Not Ready',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+        });
+      const draft = draftRes.body as VideoResponseBody;
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${draft.id}/stream`)
+        .set('Authorization', `Bearer ${access_token}`)
+        .expect(409);
+
+      expect((res.body as VideoResponseBody).error).toBe('VIDEO_NOT_READY');
+    });
+
+    it('retorna-404-para-video-de-outro-canal', async () => {
+      const owner = await registerConfirmAndLogin(
+        'video-stream-owner@example.com',
+      );
+      const other = await registerConfirmAndLogin(
+        'video-stream-other@example.com',
+      );
+      const id = await createReadyVideo(owner.access_token, Buffer.from('x'));
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${id}/stream`)
         .set('Authorization', `Bearer ${other.access_token}`)
         .expect(404);
 

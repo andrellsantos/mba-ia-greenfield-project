@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/10 completed
+**SIs:** 7/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -53,9 +53,13 @@
   - Reaproveitou o `resolveOwnedVideo` privado já criado em SI-03.5 — nenhuma lógica de ownership duplicada.
 
 ### SI-03.7 — Endpoint GET /videos/:id/stream
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16/16 novos passando (videos.service.integration-spec: +4, videos.e2e-spec: +4, mais os testes de `getObjectRange`/`putObject` já cobertos em SI-03.3) + suíte completa revalidada (173 unit/integration + 64 e2e)
+- **Observations:**
+  - Controller usa `@Res() res: Response` (Express cru) para poder setar `Content-Range`/`Accept-Ranges`/`Content-Disposition` e status 200/206 dinamicamente — o `DomainExceptionFilter` global continua funcionando normalmente pois as exceções são lançadas no service, antes de qualquer escrita em `res`.
+  - 416 (`Requested range not satisfiable`) mapeado a partir do erro `InvalidRange` do SDK S3, via `HttpException` padrão do Nest (não é um domain error — não tem `errorCode`, conforme o Error Catalog do plano).
+  - Bug pego durante os testes: a chave de storage é derivada da extensão do `content_type` (`text/plain` → `.plain`, não `.mp4`) — corrigido nos helpers de teste que gravavam o objeto de teste na chave errada.
+  - Vídeo "pronto" para os testes é semeado diretamente (grava objeto via `StorageService.putObject` + atualiza `status` no banco), sem depender do worker (ainda não implementado — SI-03.8/03.9).
 
 ### SI-03.8 — Worker Bootstrap (contexto separado + Dockerfile + Compose)
 - **Status:** pending

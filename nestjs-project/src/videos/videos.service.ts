@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
+import { Readable } from 'stream';
 import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { Video, VideoStatus } from './entities/video.entity';
@@ -14,8 +15,14 @@ import { ChannelsService } from '../channels/channels.service';
 import {
   VideoNotFoundException,
   VideoNotInDraftException,
+  VideoNotReadyException,
 } from './exceptions/video.exception';
 import { VIDEO_PROCESSING_QUEUE, VIDEO_PROCESS_JOB } from './videos.constants';
+
+interface S3ErrorLike {
+  name?: string;
+  $metadata?: { httpStatusCode?: number };
+}
 
 const PART_SIZE_BYTES = 8 * 1024 * 1024; // 8MB per part
 
@@ -34,6 +41,15 @@ export interface VideoDetails {
   duration_seconds: number | null;
   error_message: string | null;
   created_at: Date;
+}
+
+export interface StreamableVideoFile {
+  body: Readable;
+  contentType: string | undefined;
+  contentLength: number;
+  totalSize: number;
+  range?: { start: number; end: number };
+  filename: string;
 }
 
 @Injectable()
@@ -75,6 +91,35 @@ export class VideosService {
       error_message: video.error_message,
       created_at: video.created_at,
     };
+  }
+
+  async getStreamableFile(
+    userId: string,
+    videoId: string,
+    range?: string,
+  ): Promise<StreamableVideoFile> {
+    const video = await this.resolveOwnedVideo(userId, videoId);
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+
+    try {
+      const result = await this.storageService.getObjectRange(
+        video.storage_key,
+        range,
+      );
+      const extension = video.storage_key.split('.').pop();
+      return { ...result, filename: `${video.title}.${extension}` };
+    } catch (err) {
+      const e = err as S3ErrorLike;
+      if (e.name === 'InvalidRange' || e.$metadata?.httpStatusCode === 416) {
+        throw new HttpException(
+          'Requested range not satisfiable',
+          HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE,
+        );
+      }
+      throw err;
+    }
   }
 
   async completeUpload(
