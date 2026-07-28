@@ -22,10 +22,11 @@
 
 ### SI-03.3 — Storage Service (cliente S3/MinIO, multipart presigned, leitura por Range)
 - **Status:** completed
-- **Tests:** 3/3 passing (storage.service.integration-spec.ts) contra o MinIO real
+- **Tests:** 4/4 passing (storage.service.integration-spec.ts) contra o MinIO real
 - **Observations:**
   - Teste de multipart usa uma parte de 5MB (mínimo aceito pela API S3/MinIO para partes que não são a última) para validar o fluxo `createMultipartUpload` → presigned `UploadPartCommand` → PUT direto → `completeMultipartUpload` de ponta a ponta.
-  - Bucket `streamtube-videos` já existia (criado manualmente em SI-03.1); nenhuma criação de bucket em código nesta fase.
+  - **Correção retroativa (encontrada durante a verificação final da fase, na Etapa de Fechamento):** o bucket `streamtube-videos` havia sido criado manualmente via `mc mb` nesta SI e nunca automatizado — em um `docker compose up -d` verdadeiramente do zero (volume do MinIO vazio, ex. checkout novo do repositório), nenhum código criava o bucket, e toda operação de storage falharia com `NoSuchBucket`. Isso é exatamente o risco do item de reprova automática "infra não sobe de verdade". Corrigido adicionando `OnModuleInit` ao `StorageService`: na inicialização, faz `HeadBucketCommand` e, se o bucket não existir, cria via `CreateBucketCommand`. Validado removendo o bucket manualmente e confirmando que o `worker` (que sobe automaticamente com `docker compose up -d`) o recria sozinho no boot, logando `Created storage bucket "streamtube-videos"`.
+  - Novo teste de integração instancia um `StorageService` avulso (fora do DI, mesmo padrão de `databaseConfig()` usado em `data-source.ts`) apontando para um bucket descartável, chama `onModuleInit()` diretamente e confirma que o bucket é criado e utilizável — sem mexer no bucket compartilhado pelos demais testes.
 
 ### SI-03.4 — Endpoint POST /videos (pré-cadastro + início do upload)
 - **Status:** completed

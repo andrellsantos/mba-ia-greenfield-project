@@ -1,9 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
   CompleteMultipartUploadCommand,
+  CreateBucketCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -33,7 +35,8 @@ export interface ObjectRangeResult {
 const PART_URL_EXPIRATION_SECONDS = 3600;
 
 @Injectable()
-export class StorageService {
+export class StorageService implements OnModuleInit {
+  private readonly logger = new Logger(StorageService.name);
   private readonly client: S3Client;
   private readonly bucket: string;
 
@@ -50,6 +53,15 @@ export class StorageService {
         secretAccessKey: cfg.secretAccessKey,
       },
     });
+  }
+
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch {
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      this.logger.log(`Created storage bucket "${this.bucket}"`);
+    }
   }
 
   async createMultipartUpload(

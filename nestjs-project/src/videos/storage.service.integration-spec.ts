@@ -1,3 +1,8 @@
+import {
+  DeleteBucketCommand,
+  DeleteObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
@@ -75,4 +80,39 @@ describe('StorageService (integration)', () => {
     const result = await storageService.getObjectRange(key);
     expect(result.totalSize).toBe(partBody.length);
   }, 30000);
+
+  it('onModuleInit creates the bucket automatically if it does not exist yet', async () => {
+    const cfg = storageConfig();
+    const throwawayBucket = `test-bucket-${crypto.randomUUID()}`;
+    const freshService = new StorageService({
+      ...cfg,
+      bucket: throwawayBucket,
+    });
+
+    await freshService.onModuleInit();
+    await freshService.putObject(
+      'smoke-test.txt',
+      Buffer.from('ok'),
+      'text/plain',
+    );
+    const result = await freshService.getObjectRange('smoke-test.txt');
+    expect(result.totalSize).toBeGreaterThan(0);
+
+    const client = new S3Client({
+      endpoint: cfg.endpoint,
+      region: cfg.region,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: cfg.accessKeyId,
+        secretAccessKey: cfg.secretAccessKey,
+      },
+    });
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: throwawayBucket,
+        Key: 'smoke-test.txt',
+      }),
+    );
+    await client.send(new DeleteBucketCommand({ Bucket: throwawayBucket }));
+  }, 15000);
 });
