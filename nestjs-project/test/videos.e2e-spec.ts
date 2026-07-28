@@ -17,6 +17,9 @@ interface VideoResponseBody {
   status?: string;
   upload_id?: string;
   parts?: { part_number: number; url: string }[];
+  duration_seconds?: number | null;
+  error_message?: string | null;
+  created_at?: string;
   error?: string;
 }
 
@@ -224,5 +227,58 @@ describe('Videos (e2e)', () => {
 
       expect((res.body as VideoResponseBody).error).toBe('VIDEO_NOT_IN_DRAFT');
     }, 30000);
+  });
+
+  describe('GET /videos/:id', () => {
+    async function createDraft(
+      accessToken: string,
+    ): Promise<VideoResponseBody> {
+      const res = await request(app.getHttpServer())
+        .post('/videos')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Detail Video',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+        });
+      return res.body as VideoResponseBody;
+    }
+
+    it('retorna-detalhes-do-dono', async () => {
+      const { access_token } = await registerConfirmAndLogin(
+        'video-detail@example.com',
+      );
+      const draft = await createDraft(access_token);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${draft.id}`)
+        .set('Authorization', `Bearer ${access_token}`)
+        .expect(200);
+
+      const body = res.body as VideoResponseBody;
+      expect(body.id).toBe(draft.id);
+      expect(body.title).toBe('Detail Video');
+      expect(body.status).toBe('draft');
+      expect(body.duration_seconds).toBeNull();
+      expect(body.error_message).toBeNull();
+      expect(body.created_at).toBeDefined();
+    });
+
+    it('retorna-404-para-video-de-outro-canal', async () => {
+      const owner = await registerConfirmAndLogin(
+        'video-detail-owner@example.com',
+      );
+      const other = await registerConfirmAndLogin(
+        'video-detail-other@example.com',
+      );
+      const draft = await createDraft(owner.access_token);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${draft.id}`)
+        .set('Authorization', `Bearer ${other.access_token}`)
+        .expect(404);
+
+      expect((res.body as VideoResponseBody).error).toBe('VIDEO_NOT_FOUND');
+    });
   });
 });

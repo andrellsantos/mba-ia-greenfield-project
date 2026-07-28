@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -19,7 +20,11 @@ import type { JwtPayload } from '../auth/auth.types';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { VideoStatus } from './entities/video.entity';
-import { CreateDraftResult, VideosService } from './videos.service';
+import {
+  CreateDraftResult,
+  VideoDetails,
+  VideosService,
+} from './videos.service';
 
 @ApiTags('videos')
 @Controller('videos')
@@ -82,5 +87,25 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<{ id: string; status: VideoStatus }> {
     return this.videosService.completeUpload(user.sub, id, dto.parts);
+  }
+
+  @Get(':id')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get video status and details',
+    description:
+      "Returns the caller's video current status, duration, and error details when applicable.",
+  })
+  @ApiResponse({ status: 200, description: 'Video details' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async findOne(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<VideoDetails> {
+    return this.videosService.findOwnedById(user.sub, id);
   }
 }

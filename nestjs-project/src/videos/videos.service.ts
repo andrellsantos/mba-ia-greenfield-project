@@ -27,6 +27,15 @@ export interface CreateDraftResult {
   parts: PartUploadUrl[];
 }
 
+export interface VideoDetails {
+  id: string;
+  title: string;
+  status: VideoStatus;
+  duration_seconds: number | null;
+  error_message: string | null;
+  created_at: Date;
+}
+
 @Injectable()
 export class VideosService {
   constructor(
@@ -54,6 +63,18 @@ export class VideosService {
       throw new VideoNotFoundException();
     }
     return video;
+  }
+
+  async findOwnedById(userId: string, videoId: string): Promise<VideoDetails> {
+    const video = await this.resolveOwnedVideo(userId, videoId);
+    return {
+      id: video.id,
+      title: video.title,
+      status: video.status,
+      duration_seconds: video.duration_seconds,
+      error_message: video.error_message,
+      created_at: video.created_at,
+    };
   }
 
   async completeUpload(

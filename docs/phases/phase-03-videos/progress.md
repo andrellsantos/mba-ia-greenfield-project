@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/10 completed
+**SIs:** 6/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -47,9 +47,10 @@
   - Endpoint retorna `200` (não `201`) via `@HttpCode(HttpStatus.OK)` — NestJS assume `201` para `@Post()` por padrão.
 
 ### SI-03.6 — Endpoint GET /videos/:id
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4/4 novos passando (videos.service.integration-spec: +2, videos.e2e-spec: +2) + suíte completa revalidada (169 unit/integration + 60 e2e)
+- **Observations:**
+  - Reaproveitou o `resolveOwnedVideo` privado já criado em SI-03.5 — nenhuma lógica de ownership duplicada.
 
 ### SI-03.7 — Endpoint GET /videos/:id/stream
 - **Status:** pending

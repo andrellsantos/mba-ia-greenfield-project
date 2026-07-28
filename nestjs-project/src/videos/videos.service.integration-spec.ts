@@ -191,4 +191,39 @@ describe('VideosService (integration)', () => {
       ).rejects.toThrow(VideoNotInDraftException);
     }, 30000);
   });
+
+  describe('findOwnedById', () => {
+    it('returns the video details for the owning channel', async () => {
+      const { userId } = await createUserWithChannel();
+      const draft = await videosService.createDraft(
+        userId,
+        'Details Video',
+        'video/mp4',
+        1024,
+      );
+
+      const details = await videosService.findOwnedById(userId, draft.id);
+
+      expect(details.id).toBe(draft.id);
+      expect(details.title).toBe('Details Video');
+      expect(details.status).toBe(VideoStatus.DRAFT);
+      expect(details.duration_seconds).toBeNull();
+      expect(details.error_message).toBeNull();
+    }, 15000);
+
+    it('throws VideoNotFoundException for a video owned by another channel', async () => {
+      const { userId: ownerId } = await createUserWithChannel();
+      const { userId: otherUserId } = await createUserWithChannel();
+      const draft = await videosService.createDraft(
+        ownerId,
+        'Details Video',
+        'video/mp4',
+        1024,
+      );
+
+      await expect(
+        videosService.findOwnedById(otherUserId, draft.id),
+      ).rejects.toThrow(VideoNotFoundException);
+    }, 15000);
+  });
 });
