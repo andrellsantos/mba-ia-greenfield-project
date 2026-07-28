@@ -1,11 +1,11 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
+status: clean
 issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-07-28T10:33:43-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-28T10:31:24-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-07-28T10:40:23-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-28T10:39:38-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -48,7 +48,7 @@ _None._ Phase 03 depends on the `Channel` entity (1:1 with `User`), delivered an
 
 ### Inherited Constraint Conflicts
 
-_None._ Current-scope TDs do not contradict inherited conventions (config namespacing, Domain Exception Filter format, JWT global guard) or inherited TDs from Phases 01/02.
+_None._ Current-scope TDs (including the TD-02/TD-04/TD-05 revisions from this cycle) do not contradict inherited conventions or inherited TDs from Phases 01/02.
 
 ### Unresolved Open Questions
 
