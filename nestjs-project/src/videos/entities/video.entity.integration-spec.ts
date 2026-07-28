@@ -30,7 +30,6 @@ describe('Video entity (integration)', () => {
   });
 
   beforeEach(async () => {
-    await dataSource.query('DELETE FROM "videos"');
     await cleanAllTables(dataSource);
   });
 

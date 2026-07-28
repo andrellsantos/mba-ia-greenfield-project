@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/10 completed
+**SIs:** 4/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -28,9 +28,14 @@
   - Bucket `streamtube-videos` já existia (criado manualmente em SI-03.1); nenhuma criação de bucket em código nesta fase.
 
 ### SI-03.4 — Endpoint POST /videos (pré-cadastro + início do upload)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 11/11 passing (videos.service.spec: 4, videos.service.integration-spec: 1, test/videos.e2e-spec.ts: 3) + suíte completa reverificada (161 unit/integration + 55 e2e)
+- **Observations:**
+  - Adicionado `ChannelsService.findByUserId` (com teste em `channels.service.integration-spec.ts`) — necessário para resolver o canal do usuário autenticado a partir do JWT (`JwtPayload` só carrega `sub`/`email`, não `channel_id`).
+  - `cleanAllTables` (helper compartilhado) estendido para limpar `videos` de forma segura (bloco `DO $$ ... IF EXISTS ...`) — evita quebrar arquivos de teste que não incluem a entidade `Video` em runs onde a tabela ainda não existe, e evita violação de FK em arquivos que rodam depois de testes que criam vídeos.
+  - `videos.module.spec.ts` (criado em SI-03.2) precisou de `ConfigModule` com `storageConfig` — o `StorageService` passou a ser registrado no módulo nesta SI.
+  - Criado `test/videos.e2e-spec.ts` (via etapa JIT do `/plan-test-specs`) cobrindo o grupo 1 do spec (`POST /videos`); os grupos 2-4 serão adicionados incrementalmente pelas SIs 03.5-03.7, já que o projeto usa um arquivo E2E por recurso, não por endpoint.
+  - `id` do vídeo é gerado em código (`crypto.randomUUID()`) antes do insert, não pelo default do banco — necessário para montar a `storage_key` (`videos/{id}/original.<ext>`) antes de persistir.
 
 ### SI-03.5 — Endpoint POST /videos/:id/complete-upload
 - **Status:** pending
