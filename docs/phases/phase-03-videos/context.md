@@ -6,6 +6,7 @@ sources_mtime:
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-28T10:39:38-03:00"
   docs/phases/phase-02-auth/context.md: "2026-07-28T07:44:45-03:00"
   .claude/skills/testing-guide-nestjs-project/SKILL.md: "2026-07-28T07:44:45-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-07-28T10:42:53-03:00"
 ---
 
 # phase-03-videos — Context
@@ -45,9 +46,9 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Tecnologia de fila | decided | A (BullMQ + Redis) | — _(fixed by plan-resolve)_ |
-| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Backend | Estratégia de upload de 10GB | decided | A (Presigned multipart upload direto ao storage) | — _(fixed by plan-resolve)_ |
-| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Worker e extração de metadados/thumbnail | decided | A (`fluent-ffmpeg` em container Node dedicado) | — _(fixed by plan-resolve)_ |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Tecnologia de fila | decided | A (BullMQ + Redis) | `@nestjs/bullmq@^11.0.4`, `bullmq@^5.81.2`, `ioredis@^5.11.1` |
+| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Backend | Estratégia de upload de 10GB | decided | A (Presigned multipart upload direto ao storage) | `@aws-sdk/client-s3@^3.1096.0`, `@aws-sdk/s3-request-presigner@^3.1096.0` |
+| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Worker e extração de metadados/thumbnail | decided | A (`fluent-ffmpeg` em container Node dedicado) | `fluent-ffmpeg@^2.1.3`, `@types/fluent-ffmpeg@^2.1.28` |
 | phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Backend | URL única e streaming | decided | A (UUID da entidade + streaming proxiado com Range/206) | — |
 | phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | Ciclo de status e tratamento de falha | decided | A (4 estados, retry delegado à fila) | — |
 
@@ -75,13 +76,13 @@ _Source files:_
 
 **Recommendation:** BullMQ + Redis — é o padrão de fato do ecossistema NestJS para jobs assíncronos, com integração oficial (`@nestjs/bullmq`) que já resolve retries, backoff e o padrão producer/consumer que a arquitetura-alvo exige. O custo de adicionar Redis ao Compose é baixo frente ao ganho de maturidade e observabilidade da fila.
 
-**Libraries:** `@nestjs/bullmq`, `bullmq` _(versões a fixar via context7 em plan-resolve)_
+**Libraries:** `@nestjs/bullmq@^11.0.4`, `bullmq@^5.81.2`, `ioredis@^5.11.1`
 
 ### phase-03-videos/TD-02
 
 **Recommendation:** Presigned multipart upload direto ao MinIO/S3 — remove o binário do caminho da API, evitando qualquer risco de travamento por arquivos de até 10GB; aproveita a API multipart nativa do MinIO (compatível com S3) sem exigir infraestrutura adicional.
 
-**Libraries:** `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` _(versões a fixar via context7 em plan-resolve)_
+**Libraries:** `@aws-sdk/client-s3@^3.1096.0`, `@aws-sdk/s3-request-presigner@^3.1096.0`
 
 **Revisions:**
 - 2026-07-28 — Bucket único (`streamtube-videos`) com chaves `videos/{videoId}/original.<ext>` e `videos/{videoId}/thumbnail.jpg`.
@@ -90,7 +91,7 @@ _Source files:_
 
 **Recommendation:** `fluent-ffmpeg` em container Node dedicado — resolve extração de metadados (`ffprobe()`) e geração de thumbnail (`screenshots()`) com uma API testada e concisa sobre o FFmpeg; mantém o worker como processo Node consistente com o resto do stack.
 
-**Libraries:** `fluent-ffmpeg` _(+ binário `ffmpeg`/`ffprobe` na imagem Docker do worker; versão a fixar via context7 em plan-resolve)_
+**Libraries:** `fluent-ffmpeg@^2.1.3`, `@types/fluent-ffmpeg@^2.1.28` _(+ binário `ffmpeg`/`ffprobe` instalado na imagem Docker do worker — não vem empacotado com a lib)_
 
 ### phase-03-videos/TD-04
 
