@@ -1,10 +1,21 @@
 import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { Video, VideoStatus } from './entities/video.entity';
-import { StorageService, PartUploadUrl } from './storage.service';
+import {
+  StorageService,
+  PartUploadUrl,
+  CompletedPart,
+} from './storage.service';
 import { ChannelsService } from '../channels/channels.service';
+import {
+  VideoNotFoundException,
+  VideoNotInDraftException,
+} from './exceptions/video.exception';
+import { VIDEO_PROCESSING_QUEUE, VIDEO_PROCESS_JOB } from './videos.constants';
 
 const PART_SIZE_BYTES = 8 * 1024 * 1024; // 8MB per part
 
@@ -24,7 +35,56 @@ export class VideosService {
     private readonly dataSource: DataSource,
     private readonly storageService: StorageService,
     private readonly channelsService: ChannelsService,
+    @InjectQueue(VIDEO_PROCESSING_QUEUE) private readonly queue: Queue,
   ) {}
+
+  private async resolveOwnedVideo(
+    userId: string,
+    videoId: string,
+  ): Promise<Video> {
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel) {
+      throw new Error(`No channel found for user ${userId}`);
+    }
+
+    const video = await this.videoRepository.findOne({
+      where: { id: videoId, channel_id: channel.id },
+    });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+    return video;
+  }
+
+  async completeUpload(
+    userId: string,
+    videoId: string,
+    parts: CompletedPart[],
+  ): Promise<{ id: string; status: VideoStatus }> {
+    const video = await this.resolveOwnedVideo(userId, videoId);
+    if (video.status !== VideoStatus.DRAFT) {
+      throw new VideoNotInDraftException();
+    }
+
+    await this.storageService.completeMultipartUpload(
+      video.storage_key,
+      video.upload_id!,
+      parts,
+    );
+
+    await this.videoRepository.update(
+      { id: video.id },
+      { status: VideoStatus.PROCESSING, upload_id: null },
+    );
+
+    await this.queue.add(
+      VIDEO_PROCESS_JOB,
+      { videoId: video.id },
+      { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
+    );
+
+    return { id: video.id, status: VideoStatus.PROCESSING };
+  }
 
   async createDraft(
     userId: string,

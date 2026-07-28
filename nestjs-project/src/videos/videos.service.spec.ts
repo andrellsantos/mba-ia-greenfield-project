@@ -1,53 +1,63 @@
 import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import { Channel } from '../channels/entities/channel.entity';
+import {
+  VideoNotFoundException,
+  VideoNotInDraftException,
+} from './exceptions/video.exception';
 import { Video, VideoStatus } from './entities/video.entity';
 import { StorageService } from './storage.service';
 import { VideosService } from './videos.service';
 
 describe('VideosService', () => {
-  describe('createDraft', () => {
-    let videosService: VideosService;
-    let mockManager: {
-      create: jest.Mock;
-      save: jest.Mock<Promise<void>, [Video]>;
-      update: jest.Mock;
+  let videosService: VideosService;
+  let mockManager: {
+    create: jest.Mock;
+    save: jest.Mock<Promise<void>, [Video]>;
+    update: jest.Mock;
+  };
+  let mockDataSource: { transaction: jest.Mock };
+  let storageService: jest.Mocked<StorageService>;
+  let channelsService: jest.Mocked<ChannelsService>;
+  let videoRepository: jest.Mocked<Repository<Video>>;
+  let queue: { add: jest.Mock };
+
+  beforeEach(() => {
+    mockManager = {
+      create: jest.fn((_entity: unknown, data: unknown) => data),
+      save: jest.fn<Promise<void>, [Video]>().mockResolvedValue(undefined),
+      update: jest.fn().mockResolvedValue(undefined),
     };
-    let mockDataSource: { transaction: jest.Mock };
-    let storageService: jest.Mocked<StorageService>;
-    let channelsService: jest.Mocked<ChannelsService>;
-    let videoRepository: jest.Mocked<Repository<Video>>;
+    mockDataSource = {
+      transaction: jest.fn((cb: (manager: unknown) => Promise<unknown>) =>
+        cb(mockManager),
+      ),
+    };
+    storageService = {
+      createMultipartUpload: jest.fn(),
+      getPartUploadUrls: jest.fn(),
+      completeMultipartUpload: jest.fn(),
+    } as unknown as jest.Mocked<StorageService>;
+    channelsService = {
+      findByUserId: jest.fn(),
+    } as unknown as jest.Mocked<ChannelsService>;
+    videoRepository = {
+      create: jest.fn((data: Partial<Video>) => data as Video),
+      findOne: jest.fn(),
+      update: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<Repository<Video>>;
+    queue = { add: jest.fn().mockResolvedValue(undefined) };
 
-    beforeEach(() => {
-      mockManager = {
-        create: jest.fn((_entity: unknown, data: unknown) => data),
-        save: jest.fn<Promise<void>, [Video]>().mockResolvedValue(undefined),
-        update: jest.fn().mockResolvedValue(undefined),
-      };
-      mockDataSource = {
-        transaction: jest.fn((cb: (manager: unknown) => Promise<unknown>) =>
-          cb(mockManager),
-        ),
-      };
-      storageService = {
-        createMultipartUpload: jest.fn(),
-        getPartUploadUrls: jest.fn(),
-      } as unknown as jest.Mocked<StorageService>;
-      channelsService = {
-        findByUserId: jest.fn(),
-      } as unknown as jest.Mocked<ChannelsService>;
-      videoRepository = {
-        create: jest.fn((data: Partial<Video>) => data as Video),
-      } as unknown as jest.Mocked<Repository<Video>>;
+    videosService = new VideosService(
+      videoRepository,
+      mockDataSource as unknown as import('typeorm').DataSource,
+      storageService,
+      channelsService,
+      queue as unknown as import('bullmq').Queue,
+    );
+  });
 
-      videosService = new VideosService(
-        videoRepository,
-        mockDataSource as unknown as import('typeorm').DataSource,
-        storageService,
-        channelsService,
-      );
-    });
-
+  describe('createDraft', () => {
     it('throws when the user has no channel', async () => {
       channelsService.findByUserId.mockResolvedValue(null);
 
@@ -124,6 +134,71 @@ describe('VideosService', () => {
       // rolls back — this unit test only verifies save() happened before the
       // throw; atomicity itself is verified by the integration test.
       expect(mockManager.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeUpload', () => {
+    const draftVideo = {
+      id: 'video-1',
+      channel_id: 'channel-1',
+      status: VideoStatus.DRAFT,
+      storage_key: 'videos/video-1/original.mp4',
+      upload_id: 'upload-123',
+    } as Video;
+
+    it('throws VideoNotFoundException when the video does not belong to the caller channel', async () => {
+      channelsService.findByUserId.mockResolvedValue({
+        id: 'channel-1',
+      } as Channel);
+      videoRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        videosService.completeUpload('user-1', 'video-1', []),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('throws VideoNotInDraftException when the video is not in draft status', async () => {
+      channelsService.findByUserId.mockResolvedValue({
+        id: 'channel-1',
+      } as Channel);
+      videoRepository.findOne.mockResolvedValue({
+        ...draftVideo,
+        status: VideoStatus.PROCESSING,
+      } as Video);
+
+      await expect(
+        videosService.completeUpload('user-1', 'video-1', []),
+      ).rejects.toThrow(VideoNotInDraftException);
+    });
+
+    it('completes the multipart upload, updates status, and enqueues the processing job', async () => {
+      channelsService.findByUserId.mockResolvedValue({
+        id: 'channel-1',
+      } as Channel);
+      videoRepository.findOne.mockResolvedValue(draftVideo);
+
+      const parts = [{ part_number: 1, etag: 'etag-1' }];
+      const result = await videosService.completeUpload(
+        'user-1',
+        'video-1',
+        parts,
+      );
+
+      expect(result).toEqual({ id: 'video-1', status: VideoStatus.PROCESSING });
+      expect(storageService.completeMultipartUpload).toHaveBeenCalledWith(
+        'videos/video-1/original.mp4',
+        'upload-123',
+        parts,
+      );
+      expect(videoRepository.update).toHaveBeenCalledWith(
+        { id: 'video-1' },
+        { status: VideoStatus.PROCESSING, upload_id: null },
+      );
+      expect(queue.add).toHaveBeenCalledWith(
+        'video.process',
+        { videoId: 'video-1' },
+        expect.objectContaining({ attempts: 3 }),
+      );
     });
   });
 });

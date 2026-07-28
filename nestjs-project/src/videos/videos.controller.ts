@@ -1,4 +1,11 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -9,7 +16,9 @@ import {
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/auth.types';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
+import { VideoStatus } from './entities/video.entity';
 import { CreateDraftResult, VideosService } from './videos.service';
 
 @ApiTags('videos')
@@ -43,5 +52,35 @@ export class VideosController {
       dto.content_type,
       dto.size_bytes,
     );
+  }
+
+  @Post(':id/complete-upload')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Complete the multipart upload and enqueue processing',
+    description:
+      'Finalizes the multipart upload at the storage provider and enqueues the video for background processing.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upload completed, processing enqueued',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not in draft status',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: CompleteUploadDto,
+  ): Promise<{ id: string; status: VideoStatus }> {
+    return this.videosService.completeUpload(user.sub, id, dto.parts);
   }
 }

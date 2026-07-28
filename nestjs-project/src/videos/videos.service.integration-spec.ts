@@ -1,7 +1,10 @@
-import { ConfigModule } from '@nestjs/config';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
+import { ConfigModule, ConfigType } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
+import queueConfig from '../config/queue.config';
 import storageConfig from '../config/storage.config';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
@@ -13,6 +16,11 @@ import {
   cleanAllTables,
   createTestDataSource,
 } from '../test/create-test-data-source';
+import { VIDEO_PROCESSING_QUEUE, VIDEO_PROCESS_JOB } from './videos.constants';
+import {
+  VideoNotFoundException,
+  VideoNotInDraftException,
+} from './exceptions/video.exception';
 import { Video, VideoStatus } from './entities/video.entity';
 import { StorageService } from './storage.service';
 import { VideosService } from './videos.service';
@@ -25,14 +33,26 @@ describe('VideosService (integration)', () => {
   let channelsService: ChannelsService;
   let userRepository: Repository<User>;
   let videoRepository: Repository<Video>;
+  let queue: Queue;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] }),
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [storageConfig, queueConfig],
+        }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
         TypeOrmModule.forFeature([Video]),
         ChannelsModule,
+        BullModule.forRootAsync({
+          imports: [ConfigModule],
+          inject: [queueConfig.KEY],
+          useFactory: (cfg: ConfigType<typeof queueConfig>) => ({
+            connection: { host: cfg.host, port: cfg.port },
+          }),
+        }),
+        BullModule.registerQueue({ name: VIDEO_PROCESSING_QUEUE }),
       ],
       providers: [StorageService, VideosService],
     }).compile();
@@ -42,14 +62,17 @@ describe('VideosService (integration)', () => {
     channelsService = module.get(ChannelsService);
     userRepository = dataSource.getRepository(User);
     videoRepository = dataSource.getRepository(Video);
+    queue = module.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
+    await queue.close();
     await dataSource.destroy();
   });
 
   beforeEach(async () => {
     await cleanAllTables(dataSource);
+    await queue.drain();
   });
 
   let userCounter = 0;
@@ -67,25 +90,105 @@ describe('VideosService (integration)', () => {
     return { userId: user.id, channelId: channel.id };
   }
 
-  it('persists the draft with the returned upload_id', async () => {
-    const { userId, channelId } = await createUserWithChannel();
+  describe('createDraft', () => {
+    it('persists the draft with the returned upload_id', async () => {
+      const { userId, channelId } = await createUserWithChannel();
 
-    const result = await videosService.createDraft(
-      userId,
-      'Integration Video',
-      'video/mp4',
-      8 * 1024 * 1024,
-    );
+      const result = await videosService.createDraft(
+        userId,
+        'Integration Video',
+        'video/mp4',
+        8 * 1024 * 1024,
+      );
 
-    expect(result.status).toBe(VideoStatus.DRAFT);
-    expect(result.upload_id).toBeTruthy();
-    expect(result.parts.length).toBeGreaterThan(0);
+      expect(result.status).toBe(VideoStatus.DRAFT);
+      expect(result.upload_id).toBeTruthy();
+      expect(result.parts.length).toBeGreaterThan(0);
 
-    const persisted = await videoRepository.findOneBy({ id: result.id });
-    expect(persisted).not.toBeNull();
-    expect(persisted!.channel_id).toBe(channelId);
-    expect(persisted!.status).toBe(VideoStatus.DRAFT);
-    expect(persisted!.upload_id).toBe(result.upload_id);
-    expect(persisted!.storage_key).toBe(`videos/${result.id}/original.mp4`);
-  }, 15000);
+      const persisted = await videoRepository.findOneBy({ id: result.id });
+      expect(persisted).not.toBeNull();
+      expect(persisted!.channel_id).toBe(channelId);
+      expect(persisted!.status).toBe(VideoStatus.DRAFT);
+      expect(persisted!.upload_id).toBe(result.upload_id);
+      expect(persisted!.storage_key).toBe(`videos/${result.id}/original.mp4`);
+    }, 15000);
+  });
+
+  describe('completeUpload', () => {
+    async function createDraftVideo(userId: string): Promise<{
+      id: string;
+      uploadId: string;
+      partUrl: string;
+    }> {
+      const draft = await videosService.createDraft(
+        userId,
+        'To Complete',
+        'text/plain',
+        5 * 1024 * 1024,
+      );
+      return {
+        id: draft.id,
+        uploadId: draft.upload_id,
+        partUrl: draft.parts[0].url,
+      };
+    }
+
+    it('completes the upload, transitions to processing, and enqueues exactly one job', async () => {
+      const { userId } = await createUserWithChannel();
+      const { id, partUrl } = await createDraftVideo(userId);
+
+      const partBody = Buffer.from('a'.repeat(5 * 1024 * 1024));
+      const uploadResponse = await fetch(partUrl, {
+        method: 'PUT',
+        body: partBody,
+      });
+      const etag = uploadResponse.headers.get('etag')!;
+
+      const result = await videosService.completeUpload(userId, id, [
+        { part_number: 1, etag },
+      ]);
+
+      expect(result).toEqual({ id, status: VideoStatus.PROCESSING });
+
+      const persisted = await videoRepository.findOneBy({ id });
+      expect(persisted!.status).toBe(VideoStatus.PROCESSING);
+      expect(persisted!.upload_id).toBeNull();
+
+      const jobs = await queue.getJobs(['waiting', 'active']);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].name).toBe(VIDEO_PROCESS_JOB);
+      expect(jobs[0].data).toEqual({ videoId: id });
+    }, 30000);
+
+    it('throws VideoNotFoundException for a video owned by another channel', async () => {
+      const { userId: ownerId } = await createUserWithChannel();
+      const { userId: otherUserId } = await createUserWithChannel();
+      const { id } = await createDraftVideo(ownerId);
+
+      await expect(
+        videosService.completeUpload(otherUserId, id, [
+          { part_number: 1, etag: 'irrelevant' },
+        ]),
+      ).rejects.toThrow(VideoNotFoundException);
+    }, 15000);
+
+    it('throws VideoNotInDraftException when completed twice', async () => {
+      const { userId } = await createUserWithChannel();
+      const { id, partUrl } = await createDraftVideo(userId);
+
+      const partBody = Buffer.from('a'.repeat(5 * 1024 * 1024));
+      const uploadResponse = await fetch(partUrl, {
+        method: 'PUT',
+        body: partBody,
+      });
+      const etag = uploadResponse.headers.get('etag')!;
+      await videosService.completeUpload(userId, id, [
+        { part_number: 1, etag },
+      ]);
+
+      await expect(
+        videosService.completeUpload(userId, id, [{ part_number: 1, etag }]),
+      ).rejects.toThrow(VideoNotInDraftException);
+    }, 30000);
+  });
 });

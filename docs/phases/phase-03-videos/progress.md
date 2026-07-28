@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/10 completed
+**SIs:** 5/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -38,9 +38,13 @@
   - `id` do vídeo é gerado em código (`crypto.randomUUID()`) antes do insert, não pelo default do banco — necessário para montar a `storage_key` (`videos/{id}/original.<ext>`) antes de persistir.
 
 ### SI-03.5 — Endpoint POST /videos/:id/complete-upload
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12/12 novos passando (videos.service.spec: +3, videos.service.integration-spec: +3, videos.e2e-spec: +3) + suíte completa revalidada
+- **Observations:**
+  - **Correção crítica de infraestrutura de testes:** `npm test` e `npm run test:e2e` (package.json) não tinham `--runInBand`, apesar do CLAUDE.md afirmar que já vinha configurado e da regra do projeto de que suítes e2e/integration compartilham um único banco e precisam rodar sequencialmente. Isso é uma condição de corrida latente desde as Fases 01/02 (arquivos rodavam em workers paralelos do Jest contra o mesmo Postgres); só se manifestou agora porque `videos.e2e-spec.ts` é mais lento (chamadas reais ao MinIO), aumentando a janela de colisão. Corrigido adicionando `--runInBand` a ambos os scripts — suíte completa revalidada 2x sem flakiness após a correção.
+  - Criadas as exceções de domínio `VideoNotFoundException` (404) e `VideoNotInDraftException` (409) em `src/videos/exceptions/video.exception.ts`, reaproveitando o `DomainExceptionFilter` já registrado globalmente (Fase 02) — nenhuma mudança no filtro foi necessária.
+  - `VideosModule` precisou de `BullModule.registerQueue` próprio (além do registro em `AppModule`) para que `@InjectQueue` funcione no escopo do módulo — padrão do `@nestjs/bullmq` (cada módulo que injeta uma fila precisa registrá-la localmente).
+  - Endpoint retorna `200` (não `201`) via `@HttpCode(HttpStatus.OK)` — NestJS assume `201` para `@Post()` por padrão.
 
 ### SI-03.6 — Endpoint GET /videos/:id
 - **Status:** pending
