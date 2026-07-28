@@ -37,46 +37,45 @@ How each external system is handled in tests. These strategies were confirmed wi
 
 ---
 
-## Object Storage — Local Filesystem
+## Object Storage — Real (MinIO via Docker)
 
-**Strategy:** Local filesystem storage in development and tests. S3 in production.
+**Strategy:** Real MinIO (S3-compatible) via the Docker `storage` service, in both development and tests — same driver as production (S3), only the endpoint differs. Decided in `docs/decisions/technical-decisions-phase-03-videos.md` (TD-02): the project's own rule is to test against real Compose infra rather than mocking what can be tested for real, the same way PostgreSQL and Mailpit already are.
 
 **Approach:**
-- The storage layer should use an abstraction (e.g., `StorageService` interface) that allows switching between local filesystem and S3
-- In tests, use the local filesystem adapter — no mocking needed
-- Use a temporary directory for test uploads: `os.tmpdir()` or a dedicated `test-uploads/` directory
-- Clean up test files in `afterAll`
+- Use the AWS SDK v3 S3 client (`@aws-sdk/client-s3`) pointed at MinIO's endpoint with `forcePathStyle: true` — no separate local-filesystem adapter or driver switch needed, since MinIO speaks the real S3 API.
+- Test isolation: clean up test objects/buckets between tests (e.g., `DeleteObjectsCommand` for keys created in the test, or a dedicated per-suite prefix).
 
 **Setup pattern:**
 ```typescript
 // In test module setup
 {
-  provide: 'STORAGE_CONFIG',
+  provide: storageConfig.KEY,
   useValue: {
-    driver: 'local',
-    basePath: path.join(os.tmpdir(), 'streamtube-test-uploads'),
+    endpoint: process.env.STORAGE_ENDPOINT ?? 'http://storage:9000',
+    region: 'us-east-1',
+    accessKeyId: process.env.STORAGE_ACCESS_KEY ?? 'minioadmin',
+    secretAccessKey: process.env.STORAGE_SECRET_KEY ?? 'minioadmin',
+    forcePathStyle: true,
   },
 }
 ```
 
 **Integration test:**
 ```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 describe('StorageService (integration)', () => {
-  const testDir = path.join(os.tmpdir(), 'streamtube-test-uploads');
+  const testKey = `test-uploads/${crypto.randomUUID()}.txt`;
 
-  afterAll(() => {
-    fs.rmSync(testDir, { recursive: true, force: true });
+  afterAll(async () => {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: testBucket, Key: testKey }));
   });
 
   it('should upload and retrieve a file', async () => {
     const buffer = Buffer.from('test content');
-    const key = await storageService.upload(buffer, 'test.txt');
+    await storageService.upload(buffer, testKey);
 
-    const retrieved = await storageService.get(key);
+    const retrieved = await storageService.get(testKey);
     expect(retrieved.toString()).toBe('test content');
   });
 });

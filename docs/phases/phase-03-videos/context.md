@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-07-28T07:44:45-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-28T10:31:24-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-28T10:39:38-03:00"
   docs/phases/phase-02-auth/context.md: "2026-07-28T07:44:45-03:00"
   .claude/skills/testing-guide-nestjs-project/SKILL.md: "2026-07-28T07:44:45-03:00"
 ---
@@ -83,6 +83,9 @@ _Source files:_
 
 **Libraries:** `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` _(versões a fixar via context7 em plan-resolve)_
 
+**Revisions:**
+- 2026-07-28 — Bucket único (`streamtube-videos`) com chaves `videos/{videoId}/original.<ext>` e `videos/{videoId}/thumbnail.jpg`.
+
 ### phase-03-videos/TD-03
 
 **Recommendation:** `fluent-ffmpeg` em container Node dedicado — resolve extração de metadados (`ffprobe()`) e geração de thumbnail (`screenshots()`) com uma API testada e concisa sobre o FFmpeg; mantém o worker como processo Node consistente com o resto do stack.
@@ -95,11 +98,17 @@ _Source files:_
 
 **Libraries:** —
 
+**Revisions:**
+- 2026-07-28 — Download e streaming são o mesmo endpoint: sem `Range` → corpo completo + `Content-Disposition: attachment`; com `Range` → `206 Partial Content`.
+
 ### phase-03-videos/TD-05
 
 **Recommendation:** 4 estados (`draft`, `processing`, `ready`, `error`), retry delegado à fila (BullMQ, TD-01) — atende ao requisito de ciclo de status sem duplicar o mecanismo de tentativas que a fila já resolve nativamente.
 
 **Libraries:** —
+
+**Revisions:**
+- 2026-07-28 — Campo mínimo obrigatório no pré-cadastro (`draft`): apenas `title`. Descrição/categoria ficam para a Fase 04.
 
 ## Inherited Decisions Detail
 
@@ -137,4 +146,4 @@ _None._
 
 Refer to the `testing-guide-nestjs-project` Skill for layer requirements per artifact type in `nestjs-project/` (entities → integration; services with branching+DB → unit+integration; services with side-effect deps → integration against the real dependency; modules → unit compilation test; controllers/DTOs → E2E only).
 
-**Conflict to resolve in `plan-validate`/`plan-resolve`:** `testing-guide-nestjs-project/references/external-systems.md` currently documents the **Object Storage** strategy as "Local Filesystem in tests, S3 in production" — written before this phase's research locked in MinIO (S3-compatible) as the object storage for both dev and test, per `docs/decisions/technical-decisions-phase-03-videos.md` and the project's own rule of not mocking what can be tested for real against the Compose infra. The guide's storage section needs to be updated to reflect testing against the real MinIO container (analogous to how PostgreSQL and Mailpit are already tested for real), not a local filesystem stub. Message Queue strategy in the same file already anticipates "Real message broker in Docker... likely BullMQ with Redis" — consistent with TD-01, no conflict there.
+**Resolved in `plan-resolve` (IC-1):** `testing-guide-nestjs-project/references/external-systems.md`'s Object Storage section was updated to document MinIO tested for real (via the Docker `storage` service), replacing the stale local-filesystem-in-tests guidance — consistent with TD-02 and the project's rule of not mocking what can be tested for real against the Compose infra. Message Queue strategy in the same file already anticipated "Real message broker in Docker... likely BullMQ with Redis" — consistent with TD-01, no change needed there.

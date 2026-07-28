@@ -75,6 +75,9 @@ _Subprojects in scope:_
 
 **Decision:** A — Presigned multipart upload direto ao storage
 
+**Revisions:**
+- 2026-07-28 — Organização de buckets/chaves fixada: um único bucket (ex.: `streamtube-videos`) com chaves por vídeo — `videos/{videoId}/original.<ext>` para o arquivo original e `videos/{videoId}/thumbnail.jpg` para a thumbnail gerada pelo worker. Rationale: resolvido em `/plan-resolve` (MD-1) — instructions.md cita explicitamente a organização de buckets/chaves como parte do escopo do research; um bucket único com chaves namespaced por `videoId` evita gerenciar múltiplos buckets sem ganho real no escopo desta fase.
+
 ---
 
 ## TD-03: Execução do worker e extração de metadados/thumbnail
@@ -132,6 +135,9 @@ _Subprojects in scope:_
 
 **Decision:** A — UUID da entidade + streaming proxiado com Range/206
 
+**Revisions:**
+- 2026-07-28 — Download e streaming são o mesmo endpoint, diferenciados pela presença do cabeçalho `Range` na requisição: sem `Range`, a API responde com o corpo completo e `Content-Disposition: attachment` (força o download); com `Range`, responde `206 Partial Content` com `Content-Range`/`Accept-Ranges` (streaming/reprodução parcial). Rationale: resolvido em `/plan-resolve` (AMB-1) — evita duplicar a lógica de leitura do storage em duas rotas distintas para o mesmo arquivo.
+
 ---
 
 ## TD-05: Ciclo de status do vídeo e tratamento de falha no processamento
@@ -157,6 +163,9 @@ _Subprojects in scope:_
 **Recommendation:** **Option A (4 estados, retry delegado à fila)** — atende exatamente o que o enunciado pede (ciclo de status refletido no banco + tratamento de falha) sem duplicar o mecanismo de retry que a fila já resolve de forma nativa e testada (TD-01). Simplicidade alinhada ao princípio de responsabilidade única: a fila controla tentativas, a tabela de vídeos reflete o estado final observável.
 
 **Decision:** A — 4 estados, retry delegado à fila
+
+**Revisions:**
+- 2026-07-28 — Campo mínimo obrigatório para o pré-cadastro (`draft`) ao iniciar o upload: apenas `title`. Descrição, categoria e demais metadados de edição ficam para a Fase 04 (Gerenciamento de Vídeos e Canal). Rationale: resolvido em `/plan-resolve` (AMB-2) — o vídeo precisa de um identificador legível desde o rascunho (exibido em uma futura listagem "meus vídeos"), mas o restante da edição de metadados é explicitamente escopo da Fase 04.
 
 ---
 
