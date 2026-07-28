@@ -32,4 +32,12 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      // expect(mock.method).toHaveBeenCalledWith(...) is a known false positive:
+      // this rule can't tell a jest.fn() apart from a real unbound class method.
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );
