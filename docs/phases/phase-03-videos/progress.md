@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/10 completed
+**SIs:** 3/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -21,9 +21,11 @@
   - O segundo teste de `migrations.integration-spec.ts` foi re-semanticamente ajustado: `undoLastMigration()` agora reverte `CreateVideos` (última migration), não mais `CreateAuthTokens` — teste renomeado e reescrito para refletir isso.
 
 ### SI-03.3 — Storage Service (cliente S3/MinIO, multipart presigned, leitura por Range)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 3/3 passing (storage.service.integration-spec.ts) contra o MinIO real
+- **Observations:**
+  - Teste de multipart usa uma parte de 5MB (mínimo aceito pela API S3/MinIO para partes que não são a última) para validar o fluxo `createMultipartUpload` → presigned `UploadPartCommand` → PUT direto → `completeMultipartUpload` de ponta a ponta.
+  - Bucket `streamtube-videos` já existia (criado manualmente em SI-03.1); nenhuma criação de bucket em código nesta fase.
 
 ### SI-03.4 — Endpoint POST /videos (pré-cadastro + início do upload)
 - **Status:** pending
