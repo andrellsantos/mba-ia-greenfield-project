@@ -460,21 +460,21 @@ SI-03.2 (root — entidade Video e migration)
 
 ## Deliverables
 
-- [ ] SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
-- [ ] SI-03.2 — Entidade Video e Migration
-- [ ] SI-03.3 — Storage Service (cliente S3/MinIO, multipart presigned, leitura por Range)
-- [ ] SI-03.4 — Endpoint POST /videos (pré-cadastro do rascunho + início do upload)
-- [ ] SI-03.5 — Endpoint POST /videos/:id/complete-upload (finaliza upload + enfileira processamento)
-- [ ] SI-03.6 — Endpoint GET /videos/:id (status e detalhes)
-- [ ] SI-03.7 — Endpoint GET /videos/:id/stream (streaming e download via Range)
-- [ ] SI-03.8 — Worker Bootstrap (contexto de aplicação separado + Dockerfile + Compose)
-- [ ] SI-03.9 — Video Processor (extração de metadados + geração de thumbnail)
-- [ ] SI-03.10 — Tratamento de Falha no Processamento (retry esgotado → status error)
+- [x] SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
+- [x] SI-03.2 — Entidade Video e Migration
+- [x] SI-03.3 — Storage Service (cliente S3/MinIO, multipart presigned, leitura por Range)
+- [x] SI-03.4 — Endpoint POST /videos (pré-cadastro do rascunho + início do upload)
+- [x] SI-03.5 — Endpoint POST /videos/:id/complete-upload (finaliza upload + enfileira processamento)
+- [x] SI-03.6 — Endpoint GET /videos/:id (status e detalhes)
+- [x] SI-03.7 — Endpoint GET /videos/:id/stream (streaming e download via Range)
+- [x] SI-03.8 — Worker Bootstrap (contexto de aplicação separado + Dockerfile + Compose)
+- [x] SI-03.9 — Video Processor (extração de metadados + geração de thumbnail)
+- [x] SI-03.10 — Tratamento de Falha no Processamento (retry esgotado → status error)
 
 **Full test suites:**
 
-- [ ] Suíte de testes passa (`cd nestjs-project && docker compose exec nestjs-api npm test -- --runInBand`)
-- [ ] Testes E2E passam (`cd nestjs-project && docker compose exec nestjs-api npm run test:e2e`)
-- [ ] Type-check passa (`cd nestjs-project && docker compose exec nestjs-api npx tsc --noEmit`)
-- [ ] Lint passa (`cd nestjs-project && docker compose exec nestjs-api npm run lint`)
-- [ ] `docker compose up -d` sobe `db`, `mailpit`, `storage`, `redis`, `nestjs-api` e `worker` com healthcheck saudável em todos os serviços com healthcheck definido.
+- [x] Suíte de testes passa (`cd nestjs-project && docker compose exec nestjs-api npm test -- --runInBand`)
+- [x] Testes E2E passam (`cd nestjs-project && docker compose exec nestjs-api npm run test:e2e`)
+- [x] Type-check passa (`cd nestjs-project && docker compose exec nestjs-api npx tsc --noEmit`)
+- [x] Lint passa (`cd nestjs-project && docker compose exec nestjs-api npm run lint`)
+- [x] `docker compose up -d` sobe `db`, `mailpit`, `storage`, `redis`, `nestjs-api` e `worker` com healthcheck saudável em todos os serviços com healthcheck definido.
