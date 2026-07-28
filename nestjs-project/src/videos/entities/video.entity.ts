@@ -45,7 +45,18 @@ export class Video {
   @Column({ type: 'varchar', nullable: true })
   upload_id: string | null;
 
-  @Column({ type: 'numeric', nullable: true })
+  @Column({
+    type: 'numeric',
+    nullable: true,
+    transformer: {
+      // pg returns `numeric` columns as strings to avoid float precision loss —
+      // convert to a real number here so consumers (API responses, callers) see
+      // duration_seconds as a number, matching the API Contract.
+      to: (value: number | null) => value,
+      from: (value: string | null) =>
+        value === null ? null : parseFloat(value),
+    },
+  })
   duration_seconds: number | null;
 
   @Column({ type: 'jsonb', nullable: true })

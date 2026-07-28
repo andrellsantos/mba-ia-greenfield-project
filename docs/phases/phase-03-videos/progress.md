@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/10 completed
+**SIs:** 9/10 completed
 
 ### SI-03.1 — Infra: Dependências, Config Namespaces, Docker Compose e Registro da Fila
 - **Status:** completed
@@ -70,9 +70,14 @@
   - `worker:dev` usa `ts-node` (mesmo padrão do script `seed` já existente), evitando configurar múltiplos entry points no `nest-cli.json`. `worker:start:prod` (`node dist/worker/worker.main`) adicionado para produção, já que `nest build` compila toda a árvore de `src/`.
 
 ### SI-03.9 — Video Processor (metadados + thumbnail)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1/1 novo passando (video.processor.integration-spec.ts, contra ffmpeg/ffprobe reais + MinIO real) + suíte completa revalidada (174 unit/integration + 64 e2e)
+- **Observations:**
+  - `ffmpeg` adicionado também ao `Dockerfile.dev` (imagem do `nestjs-api`) — necessário porque a convenção do projeto roda `npm test` dentro desse container, e o teste de integração do `VideoProcessor` invoca `ffmpeg`/`ffprobe` de verdade.
+  - Teste gera um vídeo sintético minúsculo em tempo de execução via `ffmpeg -f lavfi -i testsrc=...` (sem fixture binária versionada no repo), evitando poluir o Git com um arquivo `.mp4`.
+  - **Bug real corrigido:** coluna `duration_seconds` (`numeric` no Postgres) é retornada como `string` pelo driver `pg`, quebrando o contrato da API (`duration_seconds: number | null`). Corrigido com um `transformer` (`to`/`from`) no `@Column` da entidade `Video`, convertendo para `number` na leitura.
+  - **Fricção de tipos do TypeORM resolvida:** `metadata: Record<string, unknown> | null` no payload de `.update()` não satisfaz estruturalmente o tipo mapeado `QueryDeepPartialEntity<Video>` (index signature genérica não é atribuível ao tipo específico esperado pelo TypeORM para colunas `jsonb`). Resolvido com um cast explícito `as QueryDeepPartialEntity<Video>` no próprio call site (import de `typeorm/query-builder/QueryPartialEntity`) — mantém o campo da entidade propriamente tipado para quem a lê, isolando o cast apenas onde o TypeORM exige.
+  - `ffmpeg.ffprobe`'s callback error é tipado como `any` pela lib — `@typescript-eslint/prefer-promise-reject-errors` exige rejeitar com um `Error` de verdade; normalizado com `err instanceof Error ? err : new Error('ffprobe failed')`.
 
 ### SI-03.10 — Tratamento de Falha no Processamento
 - **Status:** pending

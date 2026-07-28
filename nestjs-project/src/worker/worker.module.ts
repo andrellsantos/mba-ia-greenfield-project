@@ -12,6 +12,7 @@ import swaggerConfig from '../config/swagger.config';
 import { envValidationSchema } from '../config/env.validation';
 import { UsersModule } from '../users/users.module';
 import { VideosModule } from '../videos/videos.module';
+import { VideoProcessor } from './video.processor';
 
 @Module({
   imports: [
@@ -53,5 +54,6 @@ import { VideosModule } from '../videos/videos.module';
     UsersModule,
     VideosModule,
   ],
+  providers: [VideoProcessor],
 })
 export class WorkerModule {}
